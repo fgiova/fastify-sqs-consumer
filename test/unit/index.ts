@@ -16,11 +16,7 @@ test("sqs", { timeout: 90000, only: true }, async (t) => {
 	t.beforeEach(async (t) => {
 		await sqsPurge(process.env.SQS_URL!);
 		const app = Fastify({
-			logger: {
-				transport: {
-					target: "pino-pretty"
-				}
-			}
+			logger: true
 		});
 		return t.context = {
 			app

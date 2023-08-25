@@ -103,6 +103,7 @@ function createConsumer(
 		if(events?.stopped) events.stopped();
 	})
 	.on("empty", () => {
+		/* istanbul ignore next */
 		if(events?.empty) events.empty();
 	});
 }

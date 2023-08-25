@@ -15,24 +15,24 @@
 		"test:debug": "tap -T -O --before=test/scripts/executors/before.js --after=test/scripts/executors/after.js"
 	},
 	"repository": {
-	  	"type": "git",
-	  	"url": "git+https://github.com/fgiova/fastify-sqs-consumer.git"
+		"type": "git",
+		"url": "git+https://github.com/fgiova/fastify-sqs-consumer.git"
 	},
 	"author": "Francesco Giovannini <fgiova@fgiova.com>",
 	"license": "MIT",
 	"keywords": [
-	  	"fastify",
-	  	"sqs",
-	  	"sqs-consumer",
-	  	"consumer",
-	  	"aws",
-	  	"amazon"
+		"fastify",
+		"sqs",
+		"sqs-consumer",
+		"consumer",
+		"aws",
+		"amazon"
 	],
 	"publishConfig": {
-	  	"access": "public"
+		"access": "public"
 	},
 	"engines": {
-	  	"node": ">=18.0.0"
+		"node": ">=18.0.0"
 	},
 	"tap": {
 		"node-arg": "--require=ts-node/register",
