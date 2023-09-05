@@ -34,6 +34,7 @@ function createConsumer(
 	waitTimeSeconds = 20,
 	batchSize = 1,
 	attributeNames: string[] = [],
+	messageAttributeNames: string[] = [],
 	events?: eventsHandlers,
 	sqs?: SQSClient
 ) {
@@ -45,6 +46,7 @@ function createConsumer(
 		batchSize,
 		sqs,
 		attributeNames,
+		messageAttributeNames,
 		handleMessage: async function handleMessageFunction(message: Message){
 			meta.pendingMessages++;
 			try {
@@ -115,6 +117,7 @@ function sqsConsumerPlugin (fastify: FastifyInstance, options: {
 	waitTimeSeconds?: number;
 	batchSize?: number;
 	attributeNames?: string[],
+	messageAttributeNames?: string[],
 	events?: eventsHandlers;
 	sqs?: SQSClient
 }[], done: any) {
@@ -132,6 +135,7 @@ function sqsConsumerPlugin (fastify: FastifyInstance, options: {
 			waitTimeSeconds,
 			batchSize,
 			attributeNames,
+			messageAttributeNames,
 			events,
 			sqs
 		} = handler;
@@ -145,6 +149,7 @@ function sqsConsumerPlugin (fastify: FastifyInstance, options: {
 			waitTimeSeconds,
 			batchSize,
 			attributeNames,
+			messageAttributeNames,
 			events,
 			sqs
 		));
