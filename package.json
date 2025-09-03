@@ -2,8 +2,8 @@
 	"name": "@fgiova/fastify-sqs-consumer",
 	"description": "sqs-consumer fastify plugin",
 	"version": "2.0.0",
-	"main": "./dist/index.js",
-	"types": "./dist/index.d.ts",
+	"main": "./dist/cjs/index.js",
+	"types": "./dist/cjs/index.d.ts",
 	"exports": {
 		".": {
 			"import": {
@@ -83,7 +83,7 @@
 		"typescript": "^5.1.6"
 	},
 	"dependencies": {
-		"@fgiova/sqs-consumer": "^2.1.1",
+		"@fgiova/sqs-consumer": "^2.1.3",
 		"fastify-plugin": "^5.0.1"
 	}
 }

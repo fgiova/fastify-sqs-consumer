@@ -167,7 +167,9 @@ function sqsConsumerPlugin(
 	done();
 }
 
-export = fp(sqsConsumerPlugin, {
+export const fastifyPlugin = fp(sqsConsumerPlugin, {
 	name: "fastify-sqs-consumer",
 	fastify: ">=5.x",
 });
+
+export default fastifyPlugin;
