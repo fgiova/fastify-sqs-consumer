@@ -1,29 +1,14 @@
 {
-  "ts-node": {
-    "transpileOnly": true
-  },
-  "compilerOptions": {
-    "target": "es2022",
-    "moduleResolution": "node",
-    "outDir": "dist",
-    "declaration": true,
-    "module": "commonjs",
-    "rootDir": "src",
-    "emitDecoratorMetadata": true,
-    "experimentalDecorators": true,
-    "sourceMap": false,
-    "noImplicitAny": true,
-    "esModuleInterop": true,
-    "noUnusedLocals": true,
-    "typeRoots": [
-      "./node_modules/@types",
-      "./@types"
-    ],
-    "skipLibCheck": true
-  },
-  "exclude": ["node_modules", "dist"],
-  "include": [
-    "src",
-    "./@types"
-  ]
+	"extends": "@tsconfig/node20/tsconfig.json",
+	"ts-node": {
+		"transpileOnly": true
+	},
+	"compilerOptions": {
+		"outDir": "dist",
+		"rootDir": "src",
+		"typeRoots": ["./node_modules/@types"],
+		"declaration": true
+	},
+	"exclude": ["node_modules", "dist"],
+	"include": ["src/**/*"]
 }

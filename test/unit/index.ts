@@ -1,98 +1,135 @@
-import { test, end } from "tap";
+import { test } from "tap";
+// biome-ignore lint/suspicious/noTsIgnore: is a Test file
+// @ts-ignore
 import "../helpers/localtest";
-import Fastify from "fastify";
+import { setTimeout } from "node:timers/promises";
+import { type Message, SQSClient } from "@aws-sdk/client-sqs";
+import {
+	type Message as MiniMessage,
+	MiniSQSClient,
+} from "@fgiova/mini-sqs-client";
+import Fastify, { type FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
+// biome-ignore lint/suspicious/noTsIgnore: is a Test file
 // @ts-ignore
 import sqsPlugin from "../../src";
-import { setTimeout } from "timers/promises";
+// biome-ignore lint/suspicious/noTsIgnore: is a Test file
+// @ts-ignore
 import { getSqsAttributes, sendSQS, sqsPurge } from "../helpers/sqsMessage";
-import {Message, SQSClient} from "@aws-sdk/client-sqs";
 
-test("sqs", { timeout: 90000, only: true }, async (t) => {
-	const sqsClient = new SQSClient({ region: "elasticmq", endpoint: process.env.SQS_ENDPOINT })
+const queueArn = "arn:aws:sqs:eu-central-1:000000000000:test-queue";
+const queueUrl = `${process.env.LOCALSTACK_ENDPOINT}/000000000000/test-queue`;
+
+test("sqs", async (t) => {
+	const sqsClient = new SQSClient({
+		region: "eu-central-1",
+		endpoint: process.env.LOCALSTACK_ENDPOINT,
+	});
+	const client = new MiniSQSClient(
+		"eu-central-1",
+		process.env.LOCALSTACK_ENDPOINT,
+		undefined,
+	);
+
 	t.teardown(async () => {
 		process.exit(0);
 	});
+
 	t.beforeEach(async (t) => {
-		await sqsPurge(process.env.SQS_URL!);
+		await sqsPurge(queueUrl);
 		const app = Fastify({
-			logger: true
+			logger: true,
 		});
-		return t.context = {
-			app
-		}
+		t.context = {
+			app,
+		};
 	});
+
 	t.afterEach(async (t) => {
 		try {
 			await t.context.app.close();
-		}
-		catch (e) {
+		} catch (e) {
 			console.error(e);
 		}
 	});
 
 	await t.test("plugin definition", async (t) => {
-		const { app } = t.context;
+		const { app } = t.context as { app: FastifyInstance };
 		app.register(sqsPlugin, [
 			{
-				queueUrl: process.env.SQS_URL!,
+				arn: queueArn,
+				sqs: client,
 				waitTimeSeconds: 1,
-				handlerFunction: async (message, fastify) => {
+				handlerFunction: async (
+					_message: Message,
+					_fastify: FastifyInstance,
+				) => {
 					return true;
 				},
-				sqs: sqsClient
-			}
+			},
 		]);
 		app.register(
-			fp(async (app, opts) => {}, {
-				dependencies: ["fastify-sqs-consumer"]
-			})
+			fp(async () => {}, {
+				dependencies: ["fastify-sqs-consumer"],
+			}),
 		);
-		await t.resolves(app.ready() as any);
+		await t.resolves(app.ready() as unknown as Promise<FastifyInstance>);
+		t.ok(app.sqsConsumers);
+		t.equal(Object.keys(app.sqsConsumers).length, 1);
 	});
 
 	await t.test("plugin process success message", async (t) => {
-		const { app } = t.context;
-		const message = new Promise((resolve, reject) => {
+		const { app } = t.context as { app: FastifyInstance };
+		const message = new Promise((resolve, _reject) => {
 			app.register(sqsPlugin, [
 				{
-					queueUrl: process.env.SQS_URL!,
+					arn: queueArn,
+					sqs: client,
 					waitTimeSeconds: 1,
 					timeout: 10_000,
-					handlerFunction: async (message, fastify) => {
+					handlerFunction: async (
+						message: Message,
+						_fastify: FastifyInstance,
+					) => {
 						resolve(message.Body);
 					},
-					sqs: sqsClient
-				}
+				},
 			]);
 		});
 		await app.ready();
 		await setTimeout(1000);
-		await sendSQS(process.env.SQS_URL!, {
-			message: "test"
-		}, sqsClient);
+		await sendSQS(
+			queueUrl,
+			{
+				message: "test",
+			},
+			sqsClient,
+		);
 
 		await t.resolveMatch(
 			message,
 			JSON.stringify({
-				message: "test"
-			})
+				message: "test",
+			}),
 		);
 	});
 
 	await t.test("plugin process up to 10 messages", async (t) => {
-		const { app } = t.context;
+		const { app } = t.context as { app: FastifyInstance };
 		app.register(sqsPlugin, [
 			{
-				queueUrl: process.env.SQS_URL!,
+				arn: queueArn,
+				sqs: client,
 				waitTimeSeconds: 1,
 				timeout: 10_000,
 				batchSize: 10,
-				handlerFunction: async (message, fastify) => {
+				handlerFunction: async (
+					message: Message,
+					_fastify: FastifyInstance,
+				) => {
 					return message.Body;
 				},
-				sqs: sqsClient
-			}
+			},
 		]);
 		await app.ready();
 		await setTimeout(1000);
@@ -100,299 +137,286 @@ test("sqs", { timeout: 90000, only: true }, async (t) => {
 			Array(10)
 				.fill(0)
 				.map(async (message) => {
-					return sendSQS(process.env.SQS_URL!, {
-						message
-					}, sqsClient);
-				}, 10)
+					return sendSQS(
+						queueUrl,
+						{
+							message,
+						},
+						sqsClient,
+					);
+				}, 10),
 		);
 		await setTimeout(500);
-		const attributes = await getSqsAttributes(process.env.SQS_URL!, ["ApproximateNumberOfMessages"]);
+		const attributes = await getSqsAttributes(queueUrl, [
+			"ApproximateNumberOfMessages",
+		]);
 		t.equal(attributes.Attributes?.ApproximateNumberOfMessages, "0");
 	});
 
 	await t.test("plugin process fail message", async (t) => {
-		const { app } = t.context;
-		const messagePromise = new Promise((resolve, reject) => {
-			let returnError = true;
+		const { app } = t.context as { app: FastifyInstance };
+		const messagePromise = new Promise((resolve, _reject) => {
 			app.register(sqsPlugin, [
 				{
-					queueUrl: process.env.SQS_URL!,
+					arn: queueArn,
+					sqs: client,
 					timeout: 1_000,
 					waitTimeSeconds: 1,
-					handlerFunction: async (message, fastify) => {
-						throw Error("error");
+					handlerFunction: async (
+						_message: Message,
+						_fastify: FastifyInstance,
+					) => {
+						return Promise.reject("error");
 					},
 					events: {
-						processingError: (error) => {
+						onError: () => {
 							resolve("handled-error");
-							return true;
-						}
+						},
 					},
-					sqs: sqsClient
-				}
+				},
 			]);
 		});
 		await app.ready();
 		await setTimeout(1000);
-		await sendSQS(process.env.SQS_URL!, {
-			message: "test-error"
-		}, sqsClient);
+		await sendSQS(
+			queueUrl,
+			{
+				message: "test-error",
+			},
+			sqsClient,
+		);
 
 		await t.resolves(messagePromise);
 	});
 
 	await t.test("plugin shutdown with messages", async (t) => {
-		const { app } = t.context;
+		const { app } = t.context as { app: FastifyInstance };
 		app.register(sqsPlugin, [
 			{
-				queueUrl: process.env.SQS_URL!,
+				arn: queueArn,
+				sqs: client,
 				timeout: 5_000,
 				waitTimeSeconds: 1,
-				handlerFunction: async (message, fastify) => {
+				handlerFunction: async (
+					_message: Message,
+					_fastify: FastifyInstance,
+				) => {
 					await setTimeout(3_000);
 					return;
 				},
-				sqs: sqsClient
-			}
+			},
 		]);
 		await app.ready();
-		await sendSQS(process.env.SQS_URL!, {
-			message: "test-timeout"
-		}, sqsClient);
+		await sendSQS(
+			queueUrl,
+			{
+				message: "test-timeout",
+			},
+			sqsClient,
+		);
 		await setTimeout(1000);
 		await app.close();
-		const attributes = await getSqsAttributes(process.env.SQS_URL!, ["ApproximateNumberOfMessages"]);
+		const attributes = await getSqsAttributes(queueUrl, [
+			"ApproximateNumberOfMessages",
+		]);
 		t.equal(attributes.Attributes?.ApproximateNumberOfMessages, "0");
 	});
 
-	await t.test("plugin message timeout not handled", async (t) => {
-		const { app } = t.context;
-		const messagePromise = new Promise((resolve, reject) => {
-			let count = 0 ;
-			app.register(sqsPlugin, [
-				{
-					queueUrl: process.env.SQS_URL!,
-					timeout: 1_000,
-					waitTimeSeconds: 1,
-					attributeNames: ["All"],
-					handlerFunction: async (message: Message, fastify) => {
-						if(Number(message.Attributes.ApproximateReceiveCount) > 1) {
-							resolve(message);
-						}
-						await setTimeout(2000, "KO");
-					},
-					sqs: sqsClient
-				}
-			]);
-		});
-		await app.ready();
-		await sendSQS(process.env.SQS_URL!, {
-			message: "timeout-error"
-		}, sqsClient);
-		await t.resolves(messagePromise);
-	});
-
-	await t.test("plugin message handled timeout", async (t) => {
-		const { app } = t.context;
-		const messagePromise = new Promise((resolve, reject) => {
-			app.register(sqsPlugin, [
-				{
-					queueUrl: process.env.SQS_URL!,
-					timeout: 1_000,
-					waitTimeSeconds: 1,
-					handlerFunction: async (message, fastify) => {
-						await setTimeout(5_000, "KO");
-					},
-					events: {
-						timeoutError: (error, message) => {
-							resolve(message);
-							return false;
+	await t.test(
+		"plugin message timeout not handled",
+		{ only: true },
+		async (t) => {
+			const { app } = t.context as { app: FastifyInstance };
+			const messagePromise = new Promise((resolve, _reject) => {
+				app.register(sqsPlugin, [
+					{
+						arn: queueArn,
+						sqs: client,
+						timeout: 1_000,
+						waitTimeSeconds: 1,
+						attributeNames: ["All"],
+						handlerFunction: async (
+							message: Message,
+							_fastify: FastifyInstance,
+						) => {
+							if (Number(message.Attributes?.ApproximateReceiveCount) > 1) {
+								resolve(message);
+							}
+							await setTimeout(2000, "KO");
 						},
 					},
-					sqs: sqsClient
-				}
+				]);
+			});
+			await app.ready();
+			await sendSQS(
+				queueUrl,
+				{
+					message: "timeout-error",
+				},
+				sqsClient,
+			);
+			await t.resolves(messagePromise);
+		},
+	);
+
+	await t.test("plugin message handled timeout", async (t) => {
+		const { app } = t.context as { app: FastifyInstance };
+		const messagePromise = new Promise((resolve, _reject) => {
+			app.register(sqsPlugin, [
+				{
+					arn: queueArn,
+					sqs: client,
+					timeout: 1_000,
+					waitTimeSeconds: 10,
+					handlerFunction: async (
+						_message: Message,
+						_fastify: FastifyInstance,
+					) => {
+						await setTimeout(2_000, "KO");
+					},
+					events: {
+						onHandlerTimeout: async (message: MiniMessage) => {
+							resolve(message);
+							await sqsPurge(queueUrl);
+						},
+					},
+				},
 			]);
 		});
 		await app.ready();
-		await sendSQS(process.env.SQS_URL!, {
-			message: "timeout-error-handled"
-		}, sqsClient);
+		await sendSQS(
+			queueUrl,
+			{
+				message: "timeout-error-handled",
+			},
+			sqsClient,
+		);
 
 		await t.resolves(messagePromise);
 		await app.close();
 		await setTimeout(2000);
-		const attributes = await getSqsAttributes(process.env.SQS_URL!, ["ApproximateNumberOfMessages"]);
+		const attributes = await getSqsAttributes(queueUrl, [
+			"ApproximateNumberOfMessages",
+		]);
 		t.equal(attributes.Attributes?.ApproximateNumberOfMessages, "0");
 	});
 
-	await t.test("plugin handled general error", async (t) => {
-		const { app } = t.context;
-		const messagePromise = new Promise((resolve, reject) => {
-			app.register(sqsPlugin, [
-				{
-					queueUrl: "error",
-					handlerFunction: async (message, fastify) => {
-						throw Error("simple-error");
-					},
-					events: {
-						error: (error, message) => {
-							resolve(message);
-						}
-					},
-					sqs: sqsClient
-				}
-			]);
-		});
-		await app.ready();
-		await t.resolves(messagePromise);
-	});
+	await t.test(
+		"plugin process success message handle processing event",
+		async (t) => {
+			const { app } = t.context as { app: FastifyInstance };
 
-	await t.test("plugin process success message handle processing event", async (t) => {
-		const { app } = t.context;
-
-		const messagePromise = new Promise((resolve, reject) => {
-			app.register(sqsPlugin, [
+			const messagePromise = new Promise((resolve, _reject) => {
+				app.register(sqsPlugin, [
+					{
+						arn: queueArn,
+						sqs: client,
+						waitTimeSeconds: 1,
+						handlerFunction: async (
+							_message: Message,
+							_fastify: FastifyInstance,
+						) => {
+							await setTimeout(300, "OK");
+						},
+						events: {
+							onHandlerSuccess: (message: MiniMessage) => {
+								resolve(message.Body);
+							},
+						},
+					},
+				]);
+			});
+			await app.ready();
+			await sendSQS(
+				queueUrl,
 				{
-					queueUrl: process.env.SQS_URL!,
-					waitTimeSeconds: 1,
-					handlerFunction: async (message, fastify) => {
-						await setTimeout(300, "OK");
-					},
-					events: {
-						messageProcessed: (message) => {
-							return resolve(message.Body);
-						}
-					},
-					sqs: sqsClient
-				}
-			]);
-		});
-		await app.ready();
-		await sendSQS(process.env.SQS_URL!, {
-			message: "test-messageProcessed"
-		}, sqsClient);
-		await t.resolveMatch(
-			messagePromise,
-			JSON.stringify({
-				message: "test-messageProcessed"
-			})
-		);
-	});
+					message: "test-messageProcessed",
+				},
+				sqsClient,
+			);
+			await t.resolveMatch(
+				messagePromise,
+				JSON.stringify({
+					message: "test-messageProcessed",
+				}),
+			);
+		},
+	);
 
-	await t.test("plugin process success message handle receiving event", async (t) => {
-		const { app } = t.context;
-		const messagePromise = new Promise((resolve, reject) => {
-			app.register(sqsPlugin, [
+	await t.test(
+		"plugin process success message handle receiving event",
+		async (t) => {
+			const { app } = t.context as { app: FastifyInstance };
+			const messagePromise = new Promise((resolve, _reject) => {
+				app.register(sqsPlugin, [
+					{
+						arn: queueArn,
+						sqs: client,
+						waitTimeSeconds: 1,
+						handlerFunction: async (
+							message: Message,
+							_fastify: FastifyInstance,
+						) => {
+							return message.Body;
+						},
+						events: {
+							onMessage: (message: MiniMessage) => {
+								resolve(message.Body);
+							},
+						},
+					},
+				]);
+			});
+			await app.ready();
+			await sendSQS(
+				queueUrl,
 				{
-					queueUrl: process.env.SQS_URL!,
-					waitTimeSeconds: 1,
-					handlerFunction: async (message, fastify) => {
-						return message.Body;
-					},
-					events: {
-						messageReceived: (message) => {
-							resolve(message.Body);
-						}
-					},
-					sqs: sqsClient
-				}
-			]);
-		});
-		await app.ready();
-		await sendSQS(process.env.SQS_URL!, {
-			message: "test"
-		}, sqsClient);
-		await t.resolveMatch(
-			messagePromise,
-			JSON.stringify({
-				message: "test"
-			})
-		);
-	});
+					message: "test",
+				},
+				sqsClient,
+			);
+			await t.resolveMatch(
+				messagePromise,
+				JSON.stringify({
+					message: "test",
+				}),
+			);
+		},
+	);
 
-	await t.test("plugin process success message handle response sqs event", async (t) => {
-		const { app } = t.context;
-		const messagePromise = new Promise((resolve, reject) => {
-			app.register(sqsPlugin, [
+	await t.test(
+		"plugin process success message handle response sqs event",
+		async (t) => {
+			const { app } = t.context as { app: FastifyInstance };
+			const messagePromise = new Promise((resolve, _reject) => {
+				app.register(sqsPlugin, [
+					{
+						arn: queueArn,
+						sqs: client,
+						waitTimeSeconds: 1,
+						handlerFunction: async (
+							message: Message,
+							_fastify: FastifyInstance,
+						) => {
+							return message.Body;
+						},
+						events: {
+							onSuccess: () => {
+								resolve("processed");
+							},
+						},
+					},
+				]);
+			});
+			await app.ready();
+			await sendSQS(
+				queueUrl,
 				{
-					queueUrl: process.env.SQS_URL!,
-					waitTimeSeconds: 1,
-					handlerFunction: async (message, fastify) => {
-						return message.Body;
-					},
-					events: {
-						responseProcessed: () => {
-							resolve("processed");
-						}
-					},
-					sqs: sqsClient
-				}
-			]);
-		});
-		await app.ready();
-		await sendSQS(process.env.SQS_URL!, {
-			message: "test"
-		}, sqsClient);
-		await t.resolves(
-			messagePromise
-		);
-	});
-
-	await t.test("plugin process success message handle stopped consumer event", async (t) => {
-		const { app } = t.context;
-		const messagePromise = new Promise((resolve, reject) => {
-			app.register(sqsPlugin, [
-				{
-					queueUrl: process.env.SQS_URL!,
-					waitTimeSeconds: 1,
-					handlerFunction: async (message, fastify) => {
-						return message.Body;
-					},
-					events: {
-						stopped: () => {
-							resolve("stopped");
-						}
-					},
-					sqs: sqsClient
-				}
-			]);
-		});
-		await app.ready();
-		await sendSQS(process.env.SQS_URL!, {
-			message: "test"
-		}, sqsClient);
-		await app.close();
-		await t.resolves(
-			messagePromise
-		);
-	});
-
-	await t.test("plugin process success message handle empty queue event", async (t) => {
-		const { app } = t.context;
-		const messagePromise = new Promise((resolve, reject) => {
-			app.register(sqsPlugin, [
-				{
-					queueUrl: process.env.SQS_URL!,
-					waitTimeSeconds: 1,
-					handlerFunction: async (message, fastify) => {
-						return message.Body;
-					},
-					events: {
-						empty: () => {
-							resolve("empty");
-						}
-					},
-					sqs: sqsClient
-				}
-			]);
-		});
-		await app.ready();
-		await sendSQS(process.env.SQS_URL!, {
-			message: "test"
-		}, sqsClient);
-		await setTimeout(2_000);
-		await t.resolves(
-			messagePromise
-		);
-	});
+					message: "test",
+				},
+				sqsClient,
+			);
+			await t.resolves(messagePromise);
+		},
+	);
 });

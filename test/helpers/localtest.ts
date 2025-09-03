@@ -1,20 +1,20 @@
-// @ts-ignore
-import path from "path"
-// @ts-ignore
-import fs from "fs";
-import {Socket} from "net";
-import {teardown} from "tap";
-// @ts-ignore
+import { readFileSync } from "node:fs";
+import { Socket } from "node:net";
+import path from "node:path";
 import dotenv from "dotenv";
+import tap from "tap";
 
 const defaultExport = () => {
 	dotenv.config({
-		path: ".env.dev"
+		path: ".env.dev",
 	});
-	if(!process.env.TEST_LOCAL) {
-		const jsonString = fs.readFileSync(path.resolve(process.cwd(), "test-env.json"), {
-			encoding: "utf8"
-		});
+	if (!process.env.TEST_LOCAL) {
+		const jsonString = readFileSync(
+			path.resolve(process.cwd(), "test-env.json"),
+			{
+				encoding: "utf8",
+			},
+		);
 		try {
 			const envConfig = JSON.parse(jsonString);
 
@@ -25,19 +25,27 @@ const defaultExport = () => {
 			console.error(err);
 		}
 	}
-	if(process.env.REAPER) {
+	if (process.env.REAPER) {
 		const [host, port] = process.env.REAPER.split(":");
 		const socket = new Socket();
 		socket.connect(Number(port), host, () => {
-			socket.write(`label=org.testcontainers.session-id=${process.env.REAPER_SESSION}\r\n`);
-			socket.write(`label=org.testcontainers.session-id=${process.env.REAPER_SESSION}--\r\n`);
-		})
-		.on("error", (error) => {
-			console.error(error);
+			socket.write(
+				`label=org.testcontainers.session-id=${process.env.REAPER_SESSION}\r\n`,
+			);
+		});
+		socket.on("error", (error) => {
+			console.log(error);
 		});
 
-		// @ts-ignore
-		teardown(() => socket.destroy())
+		tap.teardown(() => {
+			setTimeout(() => {
+				socket.destroy();
+				// force kill the process if it doesn't stop on its own
+				setTimeout(() => {
+					process.exit(0);
+				}, 300);
+			}, 300);
+		});
 	}
-}
+};
 defaultExport();

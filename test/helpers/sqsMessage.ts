@@ -1,43 +1,53 @@
-import { SQSClient, SendMessageCommand, GetQueueAttributesCommand, PurgeQueueCommand } from "@aws-sdk/client-sqs";
+import {
+	GetQueueAttributesCommand,
+	PurgeQueueCommand,
+	SendMessageCommand,
+	SQSClient,
+} from "@aws-sdk/client-sqs";
 
-const sendSQS = (queueUrl: string, body: any, client?: SQSClient ) => {
+const sendSQS = (queueUrl: string, body: unknown, _client?: SQSClient) => {
 	const params = {
 		MessageBody: JSON.stringify(body),
-		QueueUrl: queueUrl
+		QueueUrl: queueUrl,
 	};
-	const sqs = client ?? new SQSClient({
-		region: "elasticmq",
-		endpoint: process.env.SQS_URL
-	});
+	const sqs =
+		_client ||
+		new SQSClient({
+			region: "eu-central-1",
+			endpoint: process.env.LOCALSTACK_ENDPOINT,
+		});
 	return sqs.send(new SendMessageCommand(params));
 };
 
 const getSqsAttributes = (queueUrl: string, attributeNames: string[]) => {
 	const params = {
 		AttributeNames: attributeNames,
-		QueueUrl: queueUrl
+		QueueUrl: queueUrl,
 	};
 	const sqs = new SQSClient({
-		region: "elasticmq",
-		endpoint: process.env.SQS_URL,
+		region: "eu-central-1",
+		endpoint: process.env.LOCALSTACK_ENDPOINT,
 	});
 	return sqs.send(new GetQueueAttributesCommand(params));
 };
 
 const sqsPurge = async (queueUrl: string) => {
 	const sqs = new SQSClient({
-		region: "elasticmq",
-		endpoint: process.env.SQS_URL
+		region: "eu-central-1",
+		endpoint: process.env.LOCALSTACK_ENDPOINT,
 	});
-	await sqs
-		.send(new PurgeQueueCommand({
-			QueueUrl: queueUrl
-		}));
+	await sqs.send(
+		new PurgeQueueCommand({
+			QueueUrl: queueUrl,
+		}),
+	);
 	while (true) {
-		const result = await sqs.send(new GetQueueAttributesCommand({
-			AttributeNames: ["ApproximateNumberOfMessages"],
-			QueueUrl: queueUrl
-		}));
+		const result = await sqs.send(
+			new GetQueueAttributesCommand({
+				AttributeNames: ["ApproximateNumberOfMessages"],
+				QueueUrl: queueUrl,
+			}),
+		);
 		if (result.Attributes?.ApproximateNumberOfMessages === "0") {
 			break;
 		}
