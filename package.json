@@ -2,17 +2,34 @@
 	"name": "@fgiova/fastify-sqs-consumer",
 	"description": "sqs-consumer fastify plugin",
 	"version": "1.1.0",
-	"main": "dist/index.js",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"import": {
+				"types": "./dist/esm/index.d.mts",
+				"default": "./dist/esm/index.mjs"
+			},
+			"require": {
+				"types": "./dist/cjs/index.d.ts",
+				"default": "./dist/cjs/index.js"
+			}
+		}
+	},
 	"files": [
 		"dist"
 	],
 	"scripts": {
-		"lint": "eslint 'src/**/*.ts'",
 		"clean": "rimraf dist",
-		"build": "tsc",
-		"test": "tap -t90 --before=test/scripts/executors/before.js --after=test/scripts/executors/after.js",
-		"test:local": "TEST_LOCAL=true tap -t90",
-		"test:debug": "tap -T -O --before=test/scripts/executors/before.js --after=test/scripts/executors/after.js"
+		"preBuild": "npm run clean",
+		"build": "esmBuilder",
+		"lint": "biome ci ./src ./test",
+		"fix": "biome check --write ./src ./test",
+		"test": "tap --timeout=90",
+		"test:debug": "tap --only --timeout=0",
+		"test:local": "TEST_LOCAL=true tap",
+		"test:local:debug": "TEST_LOCAL=true tap --only --timeout=0",
+		"test:coverage": "tap --coverage-report=lcovonly --coverage-report=text"
 	},
 	"repository": {
 		"type": "git",
@@ -32,39 +49,41 @@
 		"access": "public"
 	},
 	"engines": {
-		"node": ">=18.0.0"
+		"node": ">=20.14.1"
 	},
 	"tap": {
-		"node-arg": "--require=ts-node/register",
-		"ts": true,
-		"lines": 100,
-		"branches": 100,
-		"statements": 100,
-		"functions": 100
+		"show-full-coverage": true,
+		"before": "./test/scripts/executors/before.js",
+		"after": "./test/scripts/executors/teardown.js",
+		"exclude": [
+			"test/helpers/**/*",
+			"test/scripts/**/*"
+		]
+	},
+	"peerDependencies": {
+		"fastify": ">=5.0.0",
+		"p-map": ">=7.0.0"
 	},
 	"devDependencies": {
 		"@aws-sdk/client-sqs": "^3.398.0",
+		"@biomejs/biome": "2.2.2",
+		"@fgiova/cjs-esm-ts-builder": "^1.2.0",
 		"@semantic-release/changelog": "^6.0.3",
 		"@semantic-release/git": "^10.0.1",
-		"@types/node": "^18.17.1",
-		"@types/tap": "^15.0.5",
-		"@typescript-eslint/eslint-plugin": "^6.4.1",
-		"@typescript-eslint/parser": "^6.4.1",
-		"conventional-changelog-conventionalcommits": "^6.1.0",
-		"cross-env": "^7.0.3",
+		"@tsconfig/node20": "^20.1.6",
+		"@types/dotenv": "^6.1.1",
+		"@types/node": "^20.19.11",
+		"conventional-changelog-conventionalcommits": "^8.0.0",
 		"dotenv": "^10.0.0",
-		"eslint": "^8.1.0",
-		"eslint-plugin-import": "^2.25.2",
-		"fastify": "^4.21.0",
-		"nodemon": "^2.0.14",
-		"semantic-release": "^21.1.0",
-		"tap": "^16.3.8",
-		"testcontainers": "^10.2.1",
-		"ts-node": "^10.9.1",
+		"fastify": "^5.5.0",
+		"semantic-release": "^24.2.3",
+		"tap": "^21.1.0",
+		"testcontainers": "^11.5.1",
+		"ts-node": "^10.9.2",
 		"typescript": "^5.1.6"
 	},
 	"dependencies": {
-		"fastify-plugin": "^4.5.1",
-		"sqs-consumer": "^7.2.2"
+		"@fgiova/sqs-consumer": "^2.1.1",
+		"fastify-plugin": "^5.0.1"
 	}
 }
