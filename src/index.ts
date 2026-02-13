@@ -1,12 +1,17 @@
 import { randomUUID } from "node:crypto";
 import type { Message, MiniSQSClient } from "@fgiova/mini-sqs-client";
 import { type HooksOptions, SQSConsumer } from "@fgiova/sqs-consumer";
+// @ts-expect-error
+import { Unpromise } from "@watchable/unpromise";
 import type { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 
 declare module "fastify" {
 	interface FastifyInstance {
-		sqsConsumers: Record<string, SQSConsumer>;
+		sqsConsumers: Record<
+			string,
+			{ consumer: SQSConsumer; meta: { pendingMessages: number } }
+		>;
 	}
 }
 
@@ -17,9 +22,6 @@ function createConsumer(
 		message: Message,
 		fastify: FastifyInstance,
 	) => Promise<unknown>,
-	meta: {
-		pendingMessages: number;
-	},
 	timeout = 90_000,
 	waitTimeSeconds = 20,
 	batchSize = 1,
@@ -28,44 +30,69 @@ function createConsumer(
 	parallelExecution?: boolean,
 	hooks?: HooksOptions,
 	sqs?: MiniSQSClient,
+	credentials?: {
+		accessKeyId: string;
+		secretAccessKey: string;
+	},
 ) {
-	return new SQSConsumer({
-		queueARN: queueArn,
-		autostart: false,
-		consumerOptions: {
-			waitTimeSeconds,
-			itemsPerRequest: batchSize,
-			attributeNames,
-			messageAttributeNames,
-			visibilityTimeout: timeout / 1000,
-		},
-		handlerOptions: {
-			executionTimeout: timeout,
-			parallelExecution,
-		},
-		hooks,
-		clientOptions: {
-			sqsClient: sqs,
-		},
-		handler: async function handleMessageFunction(message: Message) {
-			meta.pendingMessages++;
-			try {
-				await handlerFunction(message, fastify);
-				meta.pendingMessages--;
-			} catch (e) {
-				meta.pendingMessages--;
-				fastify.log.error(e);
-				throw e;
-			}
-			return;
-		},
-	});
+	const meta = { pendingMessages: 0 };
+	return {
+		consumer: new SQSConsumer({
+			queueARN: queueArn,
+			autostart: false,
+			consumerOptions: {
+				waitTimeSeconds,
+				itemsPerRequest: batchSize,
+				attributeNames,
+				messageAttributeNames,
+				visibilityTimeout: timeout / 1000,
+			},
+			handlerOptions: {
+				executionTimeout: timeout,
+				parallelExecution,
+			},
+			hooks,
+			clientOptions: {
+				sqsClient: sqs,
+				/* c8 ignore next 1 */
+				signer: credentials ? { credentials } : undefined,
+			},
+			handler: async function handleMessageFunction(message: Message) {
+				let timeoutId: ReturnType<typeof setTimeout>;
+				meta.pendingMessages++;
+				try {
+					return await Unpromise.race([
+						handlerFunction(message, fastify),
+						new Promise<never>((_, reject) => {
+							timeoutId = setTimeout(
+								() => reject(new Error("Handler execution timed out")),
+								timeout + 1000, // Adding a buffer to ensure execution timeout is handled correctly
+							);
+						}),
+					]);
+				} catch (e) {
+					fastify.log.error(e);
+					throw e;
+					/* c8 ignore next */
+				} finally {
+					// biome-ignore lint/style/noNonNullAssertion: TimeoutId is always set before this line is reached
+					clearTimeout(timeoutId!);
+					meta.pendingMessages--;
+				}
+			},
+		}),
+		meta,
+	};
 }
 
 function sqsConsumerPlugin(
 	fastify: FastifyInstance,
 	options: {
 		arn: string;
+		credentials?: {
+			accessKeyId: string;
+			secretAccessKey: string;
+		};
 		name?: string;
 		handlerFunction: (
 			message: Message,
@@ -82,15 +109,20 @@ function sqsConsumerPlugin(
 	}[],
 	done: (err?: Error) => void,
 ) {
-	const metaData = {
-		pendingMessages: 0,
-	};
+	const consumers: Record<
+		string,
+		{
+			consumer: SQSConsumer;
+			meta: { pendingMessages: number };
+		}
+	> = {};
 
-	const consumers: Record<string, SQSConsumer> = {};
+	let maxExecutionTimeout = 90_000;
 
 	fastify.decorate("sqsConsumers", consumers);
 
 	for (const handler of options) {
+		maxExecutionTimeout = Math.max(maxExecutionTimeout, handler.timeout ?? 0);
 		const {
 			name,
 			arn: queueArn,
@@ -103,13 +135,13 @@ function sqsConsumerPlugin(
 			events,
 			sqs,
 			parallelExecution,
+			credentials,
 		} = handler;
 		try {
 			consumers[name || randomUUID()] = createConsumer(
 				fastify,
 				queueArn,
 				handlerFunction,
-				metaData,
 				timeout,
 				waitTimeSeconds,
 				batchSize,
@@ -118,6 +150,7 @@ function sqsConsumerPlugin(
 				parallelExecution,
 				events,
 				sqs,
+				credentials,
 			);
 		} /* c8 ignore next 3 */ catch (e) {
 			fastify.log.error(e);
@@ -125,23 +158,46 @@ function sqsConsumerPlugin(
 	}
 
 	fastify.addHook("onReady", (done) => {
-		for (const consumer of Object.values(consumers)) {
-			consumer.start().catch((e) => fastify.log.error(e));
+		for (const consumerName of Object.keys(consumers)) {
+			consumers[consumerName].consumer.start().catch((e) => {
+				fastify.log.error(e);
+				delete consumers[consumerName];
+			});
 		}
 		done();
 	});
 
-	let allStopped = false;
-
-	fastify.addHook("onClose", async (fastify) => {
+	fastify.addHook("onClose", (fastify, done) => {
+		let allStopped = false;
 		const arrayConsumers = Object.values(consumers);
+		const timeStart = Date.now();
 
 		for (const consumer of arrayConsumers) {
-			await consumer.stop();
+			consumer.consumer
+				.stop()
+				.catch((e) =>
+					fastify.log.error(
+						`[fastify-sqs-consumer] Error stopping consumer: ${e}`,
+					),
+				);
 		}
 
 		const interval = setInterval(() => {
-			const isRunning = arrayConsumers.some((consumer) => consumer.isRunning);
+			const isRunning = arrayConsumers.some(
+				(consumer) => consumer.consumer.isRunning,
+			);
+			const pendingMessages = arrayConsumers.reduce(
+				(acc, consumer) => acc + consumer.meta.pendingMessages,
+				0,
+			);
+
+			if (Date.now() - timeStart > maxExecutionTimeout + 2_000) {
+				fastify.log.warn(
+					"[fastify-sqs-consumer] Consumers are taking too long to stop... forcing shutdown",
+				);
+				clearInterval(interval);
+				return done();
+			}
 
 			/* c8 ignore next 5 */
 			if (isRunning) {
@@ -153,15 +209,15 @@ function sqsConsumerPlugin(
 				allStopped = true;
 				fastify.log.debug("[fastify-sqs-consumer] All consumers are stopped");
 			}
-			if (metaData.pendingMessages <= 0) {
+			if (pendingMessages <= 0) {
 				clearInterval(interval);
 				return done();
 			} else {
 				fastify.log.debug(
-					`[fastify-sqs-consumer] ${metaData.pendingMessages} pending messages`,
+					`[fastify-sqs-consumer] ${pendingMessages} pending messages`,
 				);
 			}
-		}, 50);
+		}, 500);
 	});
 
 	done();
