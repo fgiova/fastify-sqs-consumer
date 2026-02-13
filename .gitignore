@@ -98,3 +98,6 @@ dist/
 .nyc_output/
 !/.env.dev
 /test-env.json
+.plans/
+/.tap/
+/.claude/

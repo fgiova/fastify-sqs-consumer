@@ -23,7 +23,7 @@ const startReaper = async () => {
 	const reaperSessionId = reaper.Labels["org.testcontainers.session-id"];
 	return {
 		REAPER: `${reaperIp}:${reaperPort}`,
-		REAPER_SESSION: reaperSessionId,
+		REAPER_SESSION_ID: reaperSessionId,
 	};
 };
 

@@ -1,5 +1,5 @@
 # fastify sqs-consumer
-[![NPM version](https://img.shields.io/npm/v/@fgiova/fastify-sqs-consumer.svg?style=flat)](https://www.npmjs.com/package/@fgiova/fastify-rest-gateway)
+[![NPM version](https://img.shields.io/npm/v/@fgiova/fastify-sqs-consumer.svg?style=flat)](https://www.npmjs.com/package/@fgiova/fastify-sqs-consumer)
 ![CI workflow](https://github.com/fgiova/fastify-sqs-consumer/actions/workflows/node.js.yml/badge.svg)
 [![TypeScript](https://img.shields.io/badge/%3C%2F%3E-TypeScript-%230074c1.svg)](http://www.typescriptlang.org/)
 [![Linted with Biome](https://img.shields.io/badge/Linted_with-Biome-60a5fa?style=flat&logo=biome)](https://biomejs.dev)
@@ -18,11 +18,17 @@ This plugin uses [@fgiova/mini-sqs-client](https://www.npmjs.com/package/@fgiova
 ```bash
 npm i @fgiova/fastify-sqs-consumer
 ```
-### Usage
-```js
-const fastify = require("fastify")()
 
-fastify.register(require("fastify-sqs-consumer"), [
+## Usage
+
+### ESM
+```js
+import fastify from "fastify";
+import sqsConsumer from "@fgiova/fastify-sqs-consumer";
+
+const app = fastify();
+
+app.register(sqsConsumer, [
     {
         arn: "arn:aws:sqs:eu-central-1:000000000000:MyQueue",
         waitTimeSeconds: 20,
@@ -34,30 +40,55 @@ fastify.register(require("fastify-sqs-consumer"), [
     }
 ]);
 ```
-### Options
-Options are an array of objects with the following properties (one more for each queue):
 
-| Option                | Type      | Description                                                                                                                                                                                                                                                                                                           |
-|-----------------------|-----------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| arn*                  | string    | The ARN of the Amazon SQS queue from which messages are received.                                                                                                                                                                                                                                                     |
-| handlerFunction*      | function  | The function that will be called for each message.                                                                                                                                                                                                                                                                    |
-| name                  | string    | An optional name for the consumer (useful for add [hooks](https://github.com/fgiova/sqs-consumer?tab=readme-ov-file#hooks) post config). If not provided, uuid is assigned.                                                                                                                                           |
-| waitTimeSeconds       | number    | The duration (in seconds, default 20s) for which the call waits for a message to arrive in the queue before returning. If a message is available, the call returns sooner than WaitTimeSeconds. If no messages are available and the wait time expires, the call returns successfully with an empty list of messages. |
-| timeout               | number    | The duration before the message is considered as failed: default 90000ms.                                                                                                                                                                                                                                             |
-| batchSize             | number    | The maximum number of messages to return. Amazon SQS never returns more messages than this value (however, fewer messages might be returned). Valid values: 1 to 10. Default: 1.                                                                                                                                      |
-| messageAttributeNames | string[]  | Array of caught message's attributes for each message                                                                                                                                                                                                                                                                 |
-| events                | object    | Events functions for the consumer (detail in next table)                                                                                                                                                                                                                                                              |
-| sqs                   | SQSClient | Initialized SQS Client (useful for testing sessions)                                                                                                                                                                                                                                                                  |
+### CommonJS
+```js
+const fastify = require("fastify")();
 
-* required
+fastify.register(require("@fgiova/fastify-sqs-consumer").default, [
+    {
+        arn: "arn:aws:sqs:eu-central-1:000000000000:MyQueue",
+        waitTimeSeconds: 20,
+        timeout: 10_000,
+        batchSize: 10,
+        handlerFunction: async (message, fastify) => {
+            return true;
+        }
+    }
+]);
+```
 
-### handlerFunction
+## Options
+Options are an array of objects with the following properties (one for each queue):
+
+| Option                | Type                                | Description                                                                                                                                                                                                                                                                                                           |
+|-----------------------|-------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| arn*                  | string                              | The ARN of the Amazon SQS queue from which messages are received.                                                                                                                                                                                                                                                     |
+| handlerFunction*      | function                            | The function that will be called for each message.                                                                                                                                                                                                                                                                    |
+| name                  | string                              | An optional name for the consumer (useful for add [hooks](https://github.com/fgiova/sqs-consumer?tab=readme-ov-file#hooks) post config). If not provided, uuid is assigned.                                                                                                                                           |
+| waitTimeSeconds       | number                              | The duration (in seconds, default 20s) for which the call waits for a message to arrive in the queue before returning. If a message is available, the call returns sooner than WaitTimeSeconds. If no messages are available and the wait time expires, the call returns successfully with an empty list of messages. |
+| timeout               | number                              | The duration before the message is considered as failed: default 90000ms.                                                                                                                                                                                                                                             |
+| batchSize             | number                              | The maximum number of messages to return. Amazon SQS never returns more messages than this value (however, fewer messages might be returned). Valid values: 1 to 10. Default: 1.                                                                                                                                      |
+| attributeNames        | string[]                            | Array of message system attributes to retrieve for each message.                                                                                                                                                                                                                                                      |
+| messageAttributeNames | string[]                            | Array of custom message attributes to retrieve for each message.                                                                                                                                                                                                                                                      |
+| parallelExecution     | boolean                             | Enable parallel execution of message handlers.                                                                                                                                                                                                                                                                        |
+| credentials           | {accessKeyId, secretAccessKey}      | Explicit AWS credentials (alternative to environment configuration).                                                                                                                                                                                                                                                  |
+| events                | object                              | Events functions for the consumer (detail in next table).                                                                                                                                                                                                                                                             |
+| sqs                   | MiniSQSClient                       | Initialized [@fgiova/mini-sqs-client](https://www.npmjs.com/package/@fgiova/mini-sqs-client) instance (useful for testing sessions).                                                                                                                                                                                  |
+
+\* required
+
+## Decorator
+
+The plugin decorates the Fastify instance with `sqsConsumers`, a `Record<string, { consumer: SQSConsumer, meta: { pendingMessages: number } }>` that provides access to the registered consumers and their metadata.
+
+## handlerFunction
 
 Handler function is an async function called for each message received from the queue.
 Each Error thrown by the function is caught and the message is not deleted from the queue.
-Otherwise, the message is deleted from the queue. 
+Otherwise, the message is deleted from the queue.
 
-#### Events
+### Events
 
 | Option           | Type                                                                  | Description                                                         |
 |------------------|-----------------------------------------------------------------------|---------------------------------------------------------------------|

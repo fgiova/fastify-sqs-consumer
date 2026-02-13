@@ -419,4 +419,105 @@ test("sqs", async (t) => {
 			await t.resolves(messagePromise);
 		},
 	);
+
+	await t.test("plugin onReady consumer start failure", async (t) => {
+		const { app } = t.context as { app: FastifyInstance };
+		app.register(sqsPlugin, [
+			{
+				arn: queueArn,
+				name: "test-start-fail",
+				sqs: client,
+				waitTimeSeconds: 1,
+				handlerFunction: async (
+					_message: Message,
+					_fastify: FastifyInstance,
+				) => {
+					return true;
+				},
+			},
+		]);
+		app.after(() => {
+			const consumer = app.sqsConsumers["test-start-fail"];
+			consumer.consumer.start = async () => {
+				throw new Error("start failed");
+			};
+		});
+		await app.ready();
+		await setTimeout(500);
+		t.notOk(app.sqsConsumers["test-start-fail"]);
+	});
+
+	await t.test("plugin onClose stop error", async (t) => {
+		const { app } = t.context as { app: FastifyInstance };
+		app.register(sqsPlugin, [
+			{
+				arn: queueArn,
+				name: "test-stop-error",
+				sqs: client,
+				waitTimeSeconds: 1,
+				handlerFunction: async (
+					_message: Message,
+					_fastify: FastifyInstance,
+				) => {
+					return true;
+				},
+			},
+		]);
+		await app.ready();
+		await setTimeout(1000);
+
+		const consumer = app.sqsConsumers["test-stop-error"];
+		consumer.consumer.stop = async () => {
+			throw new Error("stop error");
+		};
+		Object.defineProperty(consumer.consumer, "isRunning", {
+			get: () => false,
+		});
+
+		await t.resolves(app.close());
+	});
+
+	await t.test("plugin onClose force shutdown timeout", async (t) => {
+		const { app } = t.context as { app: FastifyInstance };
+		app.register(sqsPlugin, [
+			{
+				arn: queueArn,
+				name: "test-force-shutdown",
+				sqs: client,
+				waitTimeSeconds: 1,
+				handlerFunction: async (
+					_message: Message,
+					_fastify: FastifyInstance,
+				) => {
+					return true;
+				},
+			},
+		]);
+		await app.ready();
+		await setTimeout(1000);
+
+		const consumer = app.sqsConsumers["test-force-shutdown"];
+		const originalStop = consumer.consumer.stop.bind(consumer.consumer);
+		consumer.consumer.stop = () => new Promise(() => {});
+		consumer.meta.pendingMessages = 1;
+
+		const originalDateNow = Date.now;
+		let timeOffset = 0;
+		Date.now = () => originalDateNow() + timeOffset;
+
+		const closePromise = app.close();
+
+		// Set offset after close starts (timeStart captured with offset=0)
+		// but before first interval tick at 500ms
+		globalThis.setTimeout(() => {
+			timeOffset = 93_001;
+		}, 300);
+
+		await closePromise;
+		Date.now = originalDateNow;
+
+		// Cleanup: actually stop the consumer to prevent background polling
+		await originalStop();
+		t.pass("force shutdown completed");
+	});
 });
