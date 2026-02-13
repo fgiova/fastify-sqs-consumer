@@ -1,3 +1,5 @@
+# [3.0.0](https://github.com/fgiova/fastify-sqs-consumer/compare/2.0.1...3.0.0) (2026-02-13)
+
 ## [2.0.1](https://github.com/fgiova/fastify-sqs-consumer/compare/2.0.0...2.0.1) (2025-09-03)
 
 
