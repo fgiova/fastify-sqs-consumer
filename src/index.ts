@@ -159,8 +159,11 @@ function sqsConsumerPlugin(
 
 	fastify.addHook("onReady", (done) => {
 		for (const consumerName of Object.keys(consumers)) {
-			consumers[consumerName].consumer.start().catch((e) => {
+			consumers[consumerName].consumer.start().catch(async (e) => {
 				fastify.log.error(e);
+				await consumers[consumerName].consumer
+					.stop()
+					.catch((stopErr) => fastify.log.error(stopErr));
 				delete consumers[consumerName];
 			});
 		}
