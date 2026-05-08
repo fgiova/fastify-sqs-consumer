@@ -1,3 +1,11 @@
+## [3.0.1](https://github.com/fgiova/fastify-sqs-consumer/compare/3.0.0...3.0.1) (2026-05-08)
+
+
+### Bug Fixes
+
+* handle consumer stop on error during onReady hook ([1163c6d](https://github.com/fgiova/fastify-sqs-consumer/commit/1163c6dffb1c9296c3c740fedff8fbf6ae1b4d6e))
+* update localstack version and set reaper session ID ([2ca1e13](https://github.com/fgiova/fastify-sqs-consumer/commit/2ca1e1399c41b11663e0a580e8d612da3fedc996))
+
 # [3.0.0](https://github.com/fgiova/fastify-sqs-consumer/compare/2.0.1...3.0.0) (2026-02-13)
 
 ## [2.0.1](https://github.com/fgiova/fastify-sqs-consumer/compare/2.0.0...2.0.1) (2025-09-03)
