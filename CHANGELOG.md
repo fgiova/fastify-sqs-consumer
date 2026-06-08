@@ -1,3 +1,10 @@
+# [3.1.0](https://github.com/fgiova/fastify-sqs-consumer/compare/3.0.1...3.1.0) (2026-06-08)
+
+
+### Features
+
+* support sqs options object as alternative to MiniSQSClient ([8065183](https://github.com/fgiova/fastify-sqs-consumer/commit/80651838e36c97ec9d947755d33a1b1b63f5d3ad))
+
 ## [3.0.1](https://github.com/fgiova/fastify-sqs-consumer/compare/3.0.0...3.0.1) (2026-05-08)
 
 
