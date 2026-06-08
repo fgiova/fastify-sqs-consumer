@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
-import type { Message, MiniSQSClient } from "@fgiova/mini-sqs-client";
+import { type Message, MiniSQSClient } from "@fgiova/mini-sqs-client";
 import { type HooksOptions, SQSConsumer } from "@fgiova/sqs-consumer";
 // @ts-expect-error
 import { Unpromise } from "@watchable/unpromise";
 import type { FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
+import type { Pool } from "undici";
 
 declare module "fastify" {
 	interface FastifyInstance {
@@ -29,13 +30,27 @@ function createConsumer(
 	messageAttributeNames: string[] = [],
 	parallelExecution?: boolean,
 	hooks?: HooksOptions,
-	sqs?: MiniSQSClient,
+	sqs?:
+		| MiniSQSClient
+		| {
+				endpoint?: string;
+				undiciOptions?: Pool.Options;
+				credentials?: {
+					accessKeyId: string;
+					secretAccessKey: string;
+				};
+		  },
 	credentials?: {
 		accessKeyId: string;
 		secretAccessKey: string;
 	},
 ) {
 	const meta = { pendingMessages: 0 };
+	credentials =
+		credentials ??
+		(typeof sqs === "object" && !(sqs instanceof MiniSQSClient)
+			? sqs.credentials
+			: undefined);
 	return {
 		consumer: new SQSConsumer({
 			queueARN: queueArn,
@@ -53,7 +68,15 @@ function createConsumer(
 			},
 			hooks,
 			clientOptions: {
-				sqsClient: sqs,
+				sqsClient: sqs instanceof MiniSQSClient ? sqs : undefined,
+				endpoint:
+					typeof sqs === "object" && !(sqs instanceof MiniSQSClient)
+						? sqs.endpoint
+						: undefined,
+				undiciOptions:
+					typeof sqs === "object" && !(sqs instanceof MiniSQSClient)
+						? sqs.undiciOptions
+						: undefined,
 				/* c8 ignore next 1 */
 				signer: credentials ? { credentials } : undefined,
 			},
@@ -105,7 +128,16 @@ function sqsConsumerPlugin(
 		attributeNames?: string[];
 		events?: HooksOptions;
 		parallelExecution?: boolean;
-		sqs?: MiniSQSClient;
+		sqs?:
+			| MiniSQSClient
+			| {
+					endpoint?: string;
+					undiciOptions?: Pool.Options;
+					credentials?: {
+						accessKeyId: string;
+						secretAccessKey: string;
+					};
+			  };
 	}[],
 	done: (err?: Error) => void,
 ) {
