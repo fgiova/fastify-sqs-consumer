@@ -74,9 +74,38 @@ Options are an array of objects with the following properties (one for each queu
 | parallelExecution     | boolean                             | Enable parallel execution of message handlers.                                                                                                                                                                                                                                                                        |
 | credentials           | {accessKeyId, secretAccessKey}      | Explicit AWS credentials (alternative to environment configuration).                                                                                                                                                                                                                                                  |
 | events                | object                              | Events functions for the consumer (detail in next table).                                                                                                                                                                                                                                                             |
-| sqs                   | MiniSQSClient                       | Initialized [@fgiova/mini-sqs-client](https://www.npmjs.com/package/@fgiova/mini-sqs-client) instance (useful for testing sessions).                                                                                                                                                                                  |
+| sqs                   | MiniSQSClient \| SQSOptions          | Either an initialized [@fgiova/mini-sqs-client](https://www.npmjs.com/package/@fgiova/mini-sqs-client) instance (useful for testing sessions) or an options object used to build the client (see below).                                                                                                              |
 
 \* required
+
+### sqs options object
+
+Instead of passing a pre-built `MiniSQSClient`, you can pass an options object so the plugin builds the client for you:
+
+| Option        | Type                            | Description                                                                                  |
+|---------------|---------------------------------|----------------------------------------------------------------------------------------------|
+| endpoint      | string                          | Custom SQS endpoint (e.g. a local LocalStack/ElasticMQ instance).                            |
+| undiciOptions | Pool.Options                    | [undici](https://undici.nodejs.org/#/docs/api/Pool) `Pool` options for the underlying HTTP client. |
+| credentials   | {accessKeyId, secretAccessKey}  | Explicit AWS credentials. The top-level `credentials` option takes precedence over this one. |
+
+```js
+app.register(sqsConsumer, [
+    {
+        arn: "arn:aws:sqs:eu-central-1:000000000000:MyQueue",
+        sqs: {
+            endpoint: "http://localhost:4566",
+            undiciOptions: { connections: 1 },
+            credentials: {
+                accessKeyId: "AWS_ACCESS_KEY_ID",
+                secretAccessKey: "AWS_SECRET_ACCESS_KEY"
+            }
+        },
+        handlerFunction: async (message, fastify) => {
+            return true;
+        }
+    }
+]);
+```
 
 ## Decorator
 

@@ -38,7 +38,7 @@ test("sqs", async (t) => {
 	t.beforeEach(async (t) => {
 		await sqsPurge(queueUrl);
 		const app = Fastify({
-			logger: true,
+			logger: false,
 		});
 		t.context = {
 			app,
@@ -417,6 +417,97 @@ test("sqs", async (t) => {
 				sqsClient,
 			);
 			await t.resolves(messagePromise);
+		},
+	);
+
+	await t.test(
+		"plugin process success message with sqs options object",
+		async (t) => {
+			const { app } = t.context as { app: FastifyInstance };
+			const message = new Promise((resolve, _reject) => {
+				app.register(sqsPlugin, [
+					{
+						arn: queueArn,
+						sqs: {
+							endpoint: process.env.LOCALSTACK_ENDPOINT,
+							undiciOptions: { connections: 1 },
+							credentials: {
+								accessKeyId: "AWS_ACCESS_KEY_ID",
+								secretAccessKey: "AWS_SECRET_ACCESS_KEY",
+							},
+						},
+						waitTimeSeconds: 1,
+						timeout: 10_000,
+						handlerFunction: async (
+							message: Message,
+							_fastify: FastifyInstance,
+						) => {
+							resolve(message.Body);
+						},
+					},
+				]);
+			});
+			await app.ready();
+			await setTimeout(1000);
+			await sendSQS(
+				queueUrl,
+				{
+					message: "test-options",
+				},
+				sqsClient,
+			);
+
+			await t.resolveMatch(
+				message,
+				JSON.stringify({
+					message: "test-options",
+				}),
+			);
+		},
+	);
+
+	await t.test(
+		"plugin process success message with sqs options object and top-level credentials",
+		async (t) => {
+			const { app } = t.context as { app: FastifyInstance };
+			const message = new Promise((resolve, _reject) => {
+				app.register(sqsPlugin, [
+					{
+						arn: queueArn,
+						sqs: {
+							endpoint: process.env.LOCALSTACK_ENDPOINT,
+						},
+						credentials: {
+							accessKeyId: "AWS_ACCESS_KEY_ID",
+							secretAccessKey: "AWS_SECRET_ACCESS_KEY",
+						},
+						waitTimeSeconds: 1,
+						timeout: 10_000,
+						handlerFunction: async (
+							message: Message,
+							_fastify: FastifyInstance,
+						) => {
+							resolve(message.Body);
+						},
+					},
+				]);
+			});
+			await app.ready();
+			await setTimeout(1000);
+			await sendSQS(
+				queueUrl,
+				{
+					message: "test-options-credentials",
+				},
+				sqsClient,
+			);
+
+			await t.resolveMatch(
+				message,
+				JSON.stringify({
+					message: "test-options-credentials",
+				}),
+			);
 		},
 	);
 
