@@ -538,6 +538,80 @@ test("sqs", async (t) => {
 		t.notOk(app.sqsConsumers["test-start-fail"]);
 	});
 
+	await t.test(
+		"plugin onReady start failure destroys owned client",
+		async (t) => {
+			const { app } = t.context as { app: FastifyInstance };
+			let destroyed = false;
+			app.register(sqsPlugin, [
+				{
+					arn: queueArn,
+					name: "test-start-fail-owned",
+					sqs: { endpoint: process.env.LOCALSTACK_ENDPOINT },
+					waitTimeSeconds: 1,
+					handlerFunction: async () => true,
+				},
+			]);
+			app.after(() => {
+				const entry = app.sqsConsumers["test-start-fail-owned"];
+				entry.consumer.start = async () => {
+					throw new Error("start failed");
+				};
+				const ownedClient = entry.ownedClient as MiniSQSClient;
+				const destroy = ownedClient.destroy.bind(ownedClient);
+				ownedClient.destroy = async (...args) => {
+					destroyed = true;
+					return destroy(...args);
+				};
+			});
+			await app.ready();
+			await setTimeout(500);
+			t.notOk(app.sqsConsumers["test-start-fail-owned"]);
+			t.ok(destroyed);
+		},
+	);
+
+	await t.test("plugin onClose destroys owned client only", async (t) => {
+		const { app } = t.context as { app: FastifyInstance };
+		const calls: string[] = [];
+		const userDestroy = client.destroy;
+		client.destroy = async () => {
+			calls.push("user");
+			return [undefined, true];
+		};
+		t.teardown(() => {
+			client.destroy = userDestroy;
+		});
+		app.register(sqsPlugin, [
+			{
+				arn: queueArn,
+				name: "owned",
+				sqs: { endpoint: process.env.LOCALSTACK_ENDPOINT },
+				waitTimeSeconds: 1,
+				handlerFunction: async () => true,
+			},
+			{
+				arn: queueArn,
+				name: "user",
+				sqs: client,
+				waitTimeSeconds: 1,
+				handlerFunction: async () => true,
+			},
+		]);
+		await app.ready();
+		t.notOk(app.sqsConsumers.user.ownedClient);
+		const ownedClient = app.sqsConsumers.owned.ownedClient as MiniSQSClient;
+		const destroy = ownedClient.destroy.bind(ownedClient);
+		ownedClient.destroy = async (...args) => {
+			calls.push("owned");
+			return destroy(...args);
+		};
+		await setTimeout(500);
+		await app.close();
+		t.same(calls, ["owned"]);
+		t.notOk(app.sqsConsumers.owned.consumer.isRunning);
+	});
+
 	await t.test("plugin onClose stop error", async (t) => {
 		const { app } = t.context as { app: FastifyInstance };
 		app.register(sqsPlugin, [

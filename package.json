@@ -29,7 +29,7 @@
 		"test:debug": "tap --only --timeout=0",
 		"test:local": "TEST_LOCAL=true tap",
 		"test:local:debug": "TEST_LOCAL=true tap --only --timeout=0",
-		"test:coverage": "tap --coverage-report=lcovonly --coverage-report=text"
+		"test:coverage": "tap --timeout=90 --coverage-report=lcovonly --coverage-report=text"
 	},
 	"repository": {
 		"type": "git",
