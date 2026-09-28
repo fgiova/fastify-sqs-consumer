@@ -1,3 +1,10 @@
+## [3.1.1](https://github.com/fgiova/fastify-sqs-consumer/compare/3.1.0...3.1.1) (2026-09-28)
+
+
+### Bug Fixes
+
+* destroy plugin-owned SQS clients on close to prevent leaks ([083195d](https://github.com/fgiova/fastify-sqs-consumer/commit/083195d9d848840974732a4d5c9c86327b8b7c99))
+
 # [3.1.0](https://github.com/fgiova/fastify-sqs-consumer/compare/3.0.1...3.1.0) (2026-06-08)
 
 
