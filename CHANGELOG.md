@@ -1,3 +1,10 @@
+# [3.2.0](https://github.com/fgiova/fastify-sqs-consumer/compare/3.1.1...3.2.0) (2026-10-08)
+
+
+### Features
+
+* add addSQSConsumer to register consumers at runtime ([8cebc9a](https://github.com/fgiova/fastify-sqs-consumer/commit/8cebc9ae34578eb13ce2648601349d483c921868))
+
 ## [3.1.1](https://github.com/fgiova/fastify-sqs-consumer/compare/3.1.0...3.1.1) (2026-09-28)
 
 
