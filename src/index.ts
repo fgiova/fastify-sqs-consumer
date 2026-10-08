@@ -14,9 +14,40 @@ type ConsumerEntry = {
 	ownedClient?: MiniSQSClient;
 };
 
+export type ConsumerOptions = {
+	arn: string;
+	credentials?: {
+		accessKeyId: string;
+		secretAccessKey: string;
+	};
+	name?: string;
+	handlerFunction: (
+		message: Message,
+		fastify: FastifyInstance,
+	) => Promise<unknown>;
+	timeout?: number;
+	waitTimeSeconds?: number;
+	batchSize?: number;
+	messageAttributeNames?: string[];
+	attributeNames?: string[];
+	events?: HooksOptions;
+	parallelExecution?: boolean;
+	sqs?:
+		| MiniSQSClient
+		| {
+				endpoint?: string;
+				undiciOptions?: Pool.Options;
+				credentials?: {
+					accessKeyId: string;
+					secretAccessKey: string;
+				};
+		  };
+};
+
 declare module "fastify" {
 	interface FastifyInstance {
 		sqsConsumers: Record<string, ConsumerEntry>;
+		addSQSConsumer: (consumerOptions: ConsumerOptions) => string | null;
 	}
 }
 
@@ -111,45 +142,34 @@ function createConsumer(
 
 function sqsConsumerPlugin(
 	fastify: FastifyInstance,
-	options: {
-		arn: string;
-		credentials?: {
-			accessKeyId: string;
-			secretAccessKey: string;
-		};
-		name?: string;
-		handlerFunction: (
-			message: Message,
-			fastify: FastifyInstance,
-		) => Promise<unknown>;
-		timeout?: number;
-		waitTimeSeconds?: number;
-		batchSize?: number;
-		messageAttributeNames?: string[];
-		attributeNames?: string[];
-		events?: HooksOptions;
-		parallelExecution?: boolean;
-		sqs?:
-			| MiniSQSClient
-			| {
-					endpoint?: string;
-					undiciOptions?: Pool.Options;
-					credentials?: {
-						accessKeyId: string;
-						secretAccessKey: string;
-					};
-			  };
-	}[],
+	options: ConsumerOptions[],
 	done: (err?: Error) => void,
 ) {
-	const consumers: Record<string, ConsumerEntry> = {};
+	const consumers: Record<string, ConsumerEntry> = Object.create(null);
 
 	let maxExecutionTimeout = 90_000;
 
+	let isClosing = false;
+
+	let isReady = false;
+
 	fastify.decorate("sqsConsumers", consumers);
 
-	for (const handler of options) {
-		maxExecutionTimeout = Math.max(maxExecutionTimeout, handler.timeout ?? 0);
+	const startConsumer = (consumerName: string) => {
+		const { consumer, ownedClient } = consumers[consumerName];
+		const consumerStart = consumer.start();
+
+		consumerStart.catch(async (e) => {
+			fastify.log.error(e);
+			delete consumers[consumerName];
+			await consumer.stop().catch((stopErr) => fastify.log.error(stopErr));
+			await ownedClient?.destroy().catch((err) => fastify.log.error(err));
+		});
+
+		return consumerStart;
+	};
+
+	const addSQSConsumer = (consumerOptions: ConsumerOptions) => {
 		const {
 			name,
 			arn: queueArn,
@@ -163,9 +183,31 @@ function sqsConsumerPlugin(
 			sqs,
 			parallelExecution,
 			credentials,
-		} = handler;
+		} = consumerOptions;
+
+		const consumerName = name || randomUUID();
+
+		if (consumers[consumerName]) {
+			fastify.log.warn(
+				`[fastify-sqs-consumer] Consumer with name ${consumerName} already exists. Skipping creation.`,
+			);
+			return null;
+		}
+
+		if (isClosing) {
+			fastify.log.warn(
+				`[fastify-sqs-consumer] Cannot add consumer ${consumerName} while closing. Skipping creation.`,
+			);
+			return null;
+		}
+
+		maxExecutionTimeout = Math.max(
+			maxExecutionTimeout,
+			consumerOptions.timeout ?? 0,
+		);
+
 		try {
-			consumers[name || randomUUID()] = createConsumer(
+			consumers[consumerName] = createConsumer(
 				fastify,
 				queueArn,
 				handlerFunction,
@@ -179,22 +221,34 @@ function sqsConsumerPlugin(
 				sqs,
 				credentials,
 			);
-		} /* c8 ignore next 3 */ catch (e) {
+
+			if (isReady) {
+				void startConsumer(consumerName);
+			}
+
+			return consumerName;
+		} /* c8 ignore next 4 */ catch (e) {
 			fastify.log.error(e);
+			return null;
 		}
+	};
+
+	fastify.decorate("addSQSConsumer", addSQSConsumer);
+
+	for (const handler of options) {
+		addSQSConsumer(handler);
 	}
 
 	fastify.addHook("onReady", (done) => {
+		isReady = true;
 		for (const consumerName of Object.keys(consumers)) {
-			consumers[consumerName].consumer.start().catch(async (e) => {
-				fastify.log.error(e);
-				const { consumer, ownedClient } = consumers[consumerName];
-				delete consumers[consumerName];
-				await consumer.stop().catch((stopErr) => fastify.log.error(stopErr));
-				await ownedClient?.destroy().catch((err) => fastify.log.error(err));
-			});
+			void startConsumer(consumerName);
 		}
 		done();
+	});
+
+	fastify.addHook("preClose", async () => {
+		isClosing = true;
 	});
 
 	fastify.addHook("onClose", async () => {

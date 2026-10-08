@@ -632,6 +632,7 @@ test("sqs", async (t) => {
 		await setTimeout(1000);
 
 		const consumer = app.sqsConsumers["test-stop-error"];
+		const originalStop = consumer.consumer.stop.bind(consumer.consumer);
 		consumer.consumer.stop = async () => {
 			throw new Error("stop error");
 		};
@@ -640,6 +641,9 @@ test("sqs", async (t) => {
 		});
 
 		await t.resolves(app.close());
+
+		// Cleanup: actually stop the consumer so it does not steal messages from later tests
+		await originalStop();
 	});
 
 	await t.test("plugin onClose force shutdown timeout", async (t) => {
@@ -684,5 +688,114 @@ test("sqs", async (t) => {
 		// Cleanup: actually stop the consumer to prevent background polling
 		await originalStop();
 		t.pass("force shutdown completed");
+	});
+
+	await t.test("addSQSConsumer before ready starts on ready", async (t) => {
+		const { app } = t.context as { app: FastifyInstance };
+		let consumerName: string | null = null;
+		app.register(sqsPlugin, []);
+		app.after(() => {
+			consumerName = app.addSQSConsumer({
+				arn: queueArn,
+				name: "added-before-ready",
+				sqs: client,
+				waitTimeSeconds: 1,
+				handlerFunction: async () => true,
+			});
+			t.notOk(app.sqsConsumers["added-before-ready"].consumer.isRunning);
+		});
+		await app.ready();
+		t.equal(consumerName, "added-before-ready");
+		t.ok(app.sqsConsumers["added-before-ready"].consumer.isRunning);
+	});
+
+	await t.test(
+		"addSQSConsumer after ready starts immediately and processes messages",
+		async (t) => {
+			const { app } = t.context as { app: FastifyInstance };
+			app.register(sqsPlugin, []);
+			await app.ready();
+
+			let resolveMessage: (body: unknown) => void = () => {};
+			const message = new Promise((resolve) => {
+				resolveMessage = resolve;
+			});
+			const consumerName = app.addSQSConsumer({
+				arn: queueArn,
+				sqs: client,
+				waitTimeSeconds: 1,
+				timeout: 10_000,
+				handlerFunction: async (message: MiniMessage) => {
+					resolveMessage(message.Body);
+				},
+			}) as string;
+
+			t.match(consumerName, /^[0-9a-f-]{36}$/);
+			t.ok(app.sqsConsumers[consumerName].consumer.isRunning);
+
+			await sendSQS(queueUrl, { message: "test-added-after-ready" }, sqsClient);
+			await t.resolveMatch(
+				message,
+				JSON.stringify({ message: "test-added-after-ready" }),
+			);
+		},
+	);
+
+	await t.test("addSQSConsumer duplicate name returns null", async (t) => {
+		const { app } = t.context as { app: FastifyInstance };
+		app.register(sqsPlugin, [
+			{
+				arn: queueArn,
+				name: "duplicated",
+				sqs: client,
+				waitTimeSeconds: 1,
+				handlerFunction: async () => true,
+			},
+		]);
+		await app.ready();
+		const original = app.sqsConsumers.duplicated;
+		t.equal(
+			app.addSQSConsumer({
+				arn: queueArn,
+				name: "duplicated",
+				sqs: client,
+				handlerFunction: async () => true,
+			}),
+			null,
+		);
+		t.equal(app.sqsConsumers.duplicated, original);
+	});
+
+	await t.test("addSQSConsumer while closing returns null", async (t) => {
+		const { app } = t.context as { app: FastifyInstance };
+		app.register(sqsPlugin, []);
+		let addedOnClose: string | null | undefined;
+		app.addHook("onClose", async () => {
+			addedOnClose = app.addSQSConsumer({
+				arn: queueArn,
+				name: "added-on-close",
+				sqs: client,
+				handlerFunction: async () => true,
+			});
+		});
+		await app.ready();
+		await app.close();
+		t.equal(addedOnClose, null);
+		t.notOk(app.sqsConsumers["added-on-close"]);
+	});
+
+	await t.test("addSQSConsumer accepts Object.prototype names", async (t) => {
+		const { app } = t.context as { app: FastifyInstance };
+		app.register(sqsPlugin, []);
+		await app.ready();
+		const consumerName = app.addSQSConsumer({
+			arn: queueArn,
+			name: "constructor",
+			sqs: client,
+			waitTimeSeconds: 1,
+			handlerFunction: async () => true,
+		}) as string;
+		t.equal(consumerName, "constructor");
+		t.ok(app.sqsConsumers[consumerName].consumer.isRunning);
 	});
 });

@@ -107,9 +107,38 @@ app.register(sqsConsumer, [
 ]);
 ```
 
-## Decorator
+## Decorators
 
-The plugin decorates the Fastify instance with `sqsConsumers`, a `Record<string, { consumer: SQSConsumer, meta: { pendingMessages: number } }>` that provides access to the registered consumers and their metadata.
+### sqsConsumers
+
+`sqsConsumers` is a `Record<string, { consumer: SQSConsumer, meta: { pendingMessages: number }, ownedClient?: MiniSQSClient }>` that provides access to the registered consumers and their metadata, keyed by consumer name.
+It is a null-prototype object (`Object.create(null)`): use `Object.hasOwn(app.sqsConsumers, name)` or `name in app.sqsConsumers` instead of `app.sqsConsumers.hasOwnProperty(name)`.
+
+The consumer lifecycle (start/stop) is managed by the plugin: do not call `start()` or `stop()` on these instances directly.
+
+### addSQSConsumer
+
+`addSQSConsumer(options: ConsumerOptions): string | null` adds a consumer at runtime. `options` accepts the same object used for each entry of the plugin options array (see [Options](#options)); the `ConsumerOptions` type is exported by the package.
+
+- Returns the consumer name (the generated uuid when `name` is not provided), or `null` if the consumer was not created.
+- Before the server is ready, the consumer is started together with the others in the `onReady` hook; after that, it is started immediately.
+- Returns `null` (and logs a warning) when a consumer with the same name already exists or when the server is closing.
+
+```js
+import fastify from "fastify";
+import sqsConsumer from "@fgiova/fastify-sqs-consumer";
+
+const app = fastify();
+await app.register(sqsConsumer, []);
+await app.listen({ port: 3000 });
+
+const name = app.addSQSConsumer({
+    arn: "arn:aws:sqs:eu-central-1:000000000000:MyOtherQueue",
+    handlerFunction: async (message, fastify) => {
+        return true;
+    }
+});
+```
 
 ## handlerFunction
 
