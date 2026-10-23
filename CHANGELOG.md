@@ -1,3 +1,10 @@
+# [3.3.0](https://github.com/fgiova/fastify-sqs-consumer/compare/3.2.0...3.3.0) (2026-10-23)
+
+
+### Features
+
+* add backoff option to delay retries of failed messages ([d189b0c](https://github.com/fgiova/fastify-sqs-consumer/commit/d189b0c6101fe24d3a7a5cbc388aa5f342cf34c4))
+
 # [3.2.0](https://github.com/fgiova/fastify-sqs-consumer/compare/3.1.1...3.2.0) (2026-10-08)
 
 
