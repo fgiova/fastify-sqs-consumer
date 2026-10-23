@@ -32,6 +32,7 @@ export type ConsumerOptions = {
 	attributeNames?: string[];
 	events?: HooksOptions;
 	parallelExecution?: boolean;
+	backoff?: ((attempt: number) => number) | number;
 	sqs?:
 		| MiniSQSClient
 		| {
@@ -79,6 +80,7 @@ function createConsumer(
 		accessKeyId: string;
 		secretAccessKey: string;
 	},
+	backoff?: ((attempt: number) => number) | number,
 ): ConsumerEntry {
 	const meta = { pendingMessages: 0 };
 	let ownedClient: MiniSQSClient | undefined;
@@ -102,6 +104,8 @@ function createConsumer(
 				attributeNames,
 				messageAttributeNames,
 				visibilityTimeout: timeout / 1000,
+				errorDelaySeconds: typeof backoff === "number" ? backoff : undefined,
+				errorDelayBackoff: typeof backoff === "function" ? backoff : undefined,
 			},
 			handlerOptions: {
 				executionTimeout: timeout,
@@ -183,6 +187,7 @@ function sqsConsumerPlugin(
 			sqs,
 			parallelExecution,
 			credentials,
+			backoff,
 		} = consumerOptions;
 
 		const consumerName = name || randomUUID();
@@ -220,6 +225,7 @@ function sqsConsumerPlugin(
 				events,
 				sqs,
 				credentials,
+				backoff,
 			);
 
 			if (isReady) {

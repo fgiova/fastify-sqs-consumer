@@ -189,6 +189,53 @@ test("sqs", async (t) => {
 		await t.resolves(messagePromise);
 	});
 
+	await t.test("plugin fail message with backoff function", async (t) => {
+		const { app } = t.context as { app: FastifyInstance };
+		const attemptPromise = new Promise<number>((resolve) => {
+			app.register(sqsPlugin, [
+				{
+					arn: queueArn,
+					sqs: client,
+					timeout: 1_000,
+					waitTimeSeconds: 1,
+					backoff: (attempt: number) => {
+						resolve(attempt);
+						return 30;
+					},
+					handlerFunction: async () => Promise.reject("error"),
+				},
+			]);
+		});
+		await app.ready();
+		await sendSQS(queueUrl, { message: "test-backoff-fn" }, sqsClient);
+
+		t.equal(await attemptPromise, 1);
+	});
+
+	await t.test("plugin backoff number sets errorDelaySeconds", async (t) => {
+		const { app } = t.context as { app: FastifyInstance };
+		app.register(sqsPlugin, [
+			{
+				name: "backoff-number",
+				arn: queueArn,
+				sqs: client,
+				waitTimeSeconds: 1,
+				backoff: 5,
+				handlerFunction: async () => true,
+			},
+		]);
+		await app.ready();
+		const { consumerOptions } = app.sqsConsumers["backoff-number"]
+			.consumer as unknown as {
+			consumerOptions: {
+				errorDelaySeconds: number;
+				errorDelayBackoff?: unknown;
+			};
+		};
+		t.equal(consumerOptions.errorDelaySeconds, 5);
+		t.equal(consumerOptions.errorDelayBackoff, undefined);
+	});
+
 	await t.test("plugin shutdown with messages", async (t) => {
 		const { app } = t.context as { app: FastifyInstance };
 		app.register(sqsPlugin, [
