@@ -212,6 +212,35 @@ test("sqs", async (t) => {
 		t.equal(await attemptPromise, 1);
 	});
 
+	await t.test(
+		"plugin maxRetries fires onMaxReceiveCountExceeded",
+		async (t) => {
+			const { app } = t.context as { app: FastifyInstance };
+			const exceeded = new Promise<number>((resolve) => {
+				app.register(sqsPlugin, [
+					{
+						arn: queueArn,
+						sqs: client,
+						timeout: 1_000,
+						waitTimeSeconds: 1,
+						maxRetries: () => 1,
+						events: {
+							onMaxReceiveCountExceeded: async (_message, count) => {
+								resolve(count);
+								return true;
+							},
+						},
+						handlerFunction: async () => Promise.reject("error"),
+					},
+				]);
+			});
+			await app.ready();
+			await sendSQS(queueUrl, { message: "test-max-retries" }, sqsClient);
+
+			t.equal(await exceeded, 1);
+		},
+	);
+
 	await t.test("plugin backoff number sets errorDelaySeconds", async (t) => {
 		const { app } = t.context as { app: FastifyInstance };
 		app.register(sqsPlugin, [
