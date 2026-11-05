@@ -1,3 +1,10 @@
+# [3.4.0](https://github.com/fgiova/fastify-sqs-consumer/compare/3.3.0...3.4.0) (2026-11-05)
+
+
+### Features
+
+* add maxRetries option to cap retries of failed messages ([39ddca3](https://github.com/fgiova/fastify-sqs-consumer/commit/39ddca3978b0b0d4eb5f4931eeb935c086864697))
+
 # [3.3.0](https://github.com/fgiova/fastify-sqs-consumer/compare/3.2.0...3.3.0) (2026-10-23)
 
 
