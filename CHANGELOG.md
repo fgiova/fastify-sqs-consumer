@@ -1,3 +1,10 @@
+# [3.5.0](https://github.com/fgiova/fastify-sqs-consumer/compare/3.4.0...3.5.0) (2026-11-06)
+
+
+### Features
+
+* pass message to backoff and maxRetries functions ([3c78d3a](https://github.com/fgiova/fastify-sqs-consumer/commit/3c78d3a8ac5881aff4a5b0ceda21cccc02f18df5))
+
 # [3.4.0](https://github.com/fgiova/fastify-sqs-consumer/compare/3.3.0...3.4.0) (2026-11-05)
 
 
