@@ -32,8 +32,8 @@ export type ConsumerOptions = {
 	attributeNames?: string[];
 	events?: HooksOptions;
 	parallelExecution?: boolean;
-	backoff?: ((attempt: number) => number) | number;
-	maxRetries?: ((attempt: number) => number) | number;
+	backoff?: ((attempt: number, message: Message) => number) | number;
+	maxRetries?: ((attempt: number, message: Message) => number) | number;
 	sqs?:
 		| MiniSQSClient
 		| {
@@ -81,8 +81,8 @@ function createConsumer(
 		accessKeyId: string;
 		secretAccessKey: string;
 	},
-	backoff?: ((attempt: number) => number) | number,
-	maxRetries?: ((attempt: number) => number) | number,
+	backoff?: ((attempt: number, message: Message) => number) | number,
+	maxRetries?: ((attempt: number, message: Message) => number) | number,
 ): ConsumerEntry {
 	const meta = { pendingMessages: 0 };
 	let ownedClient: MiniSQSClient | undefined;

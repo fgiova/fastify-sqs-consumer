@@ -191,15 +191,15 @@ test("sqs", async (t) => {
 
 	await t.test("plugin fail message with backoff function", async (t) => {
 		const { app } = t.context as { app: FastifyInstance };
-		const attemptPromise = new Promise<number>((resolve) => {
+		const attemptPromise = new Promise<[number, MiniMessage]>((resolve) => {
 			app.register(sqsPlugin, [
 				{
 					arn: queueArn,
 					sqs: client,
 					timeout: 1_000,
 					waitTimeSeconds: 1,
-					backoff: (attempt: number) => {
-						resolve(attempt);
+					backoff: (attempt, message) => {
+						resolve([attempt, message]);
 						return 30;
 					},
 					handlerFunction: async () => Promise.reject("error"),
@@ -209,7 +209,9 @@ test("sqs", async (t) => {
 		await app.ready();
 		await sendSQS(queueUrl, { message: "test-backoff-fn" }, sqsClient);
 
-		t.equal(await attemptPromise, 1);
+		const [attempt, message] = await attemptPromise;
+		t.equal(attempt, 1);
+		t.same(JSON.parse(message.Body as string), { message: "test-backoff-fn" });
 	});
 
 	await t.test(
